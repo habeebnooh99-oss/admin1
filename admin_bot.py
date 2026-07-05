@@ -7,9 +7,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import asyncio
 import os
 import json
-import hashlib
 
-# المسارات عشان السيرفر ما يضيع الملفات
+# المسارات
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TOKEN = "8741135682:AAEW-c-3D9NGPCwtnFsG35BYOz0yZtGjqj0"
 bot = Bot(token=TOKEN)
@@ -18,12 +17,6 @@ dp = Dispatcher(storage=MemoryStorage())
 TREE_FILE = os.path.join(BASE_DIR, "store_tree.json")
 DISCOUNTS_FILE = os.path.join(BASE_DIR, "discounts.json")
 USERS_FILE = os.path.join(BASE_DIR, "users.txt")
-
-tree_cache = None
-path_map = {}
-
-def get_short_path(path):
-    return hashlib.md5(path.encode()).hexdigest()[:16]
 
 class AdminStates(StatesGroup):
     waiting_name = State()
@@ -44,14 +37,9 @@ def save_json(file, data):
     with open(file, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 
 def get_tree():
-    global tree_cache
-    if tree_cache is None:
-        tree_cache = load_json(TREE_FILE, {"type": "folder", "children": {}})
-    return tree_cache
+    return load_json(TREE_FILE, {"type": "folder", "children": {}})
 
 def update_tree(data):
-    global tree_cache
-    tree_cache = data
     save_json(TREE_FILE, data)
 
 def get_node_by_path(path):
@@ -132,43 +120,35 @@ async def direct_exec(message: types.Message, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("open_"))
 async def open_node(call: types.CallbackQuery):
-    data = call.data.replace("open_", "")
-    path = path_map.get(data, data)
+    path = call.data.replace("open_", "")
     node = get_node_by_path(path)
     kb = []
     for name, item in node.get("children", {}).items():
         new_path = f"{path}>{name}" if path != "root" else name
-        short_new = get_short_path(new_path)
-        path_map[short_new] = new_path
         btn_text = f"📁 {name}" if item.get("type") == "folder" else f"🛒 {name} ({item.get('price', 0)}$)"
-        kb.append([InlineKeyboardButton(text=btn_text, callback_data=f"open_{short_new}"), InlineKeyboardButton(text="❌", callback_data=f"del_{short_new}")])
-    short_path = get_short_path(path)
-    kb.append([InlineKeyboardButton(text="➕ إضافة قسم", callback_data=f"addf_{short_path}"), InlineKeyboardButton(text="➕ إضافة منتج", callback_data=f"addp_{short_path}")])
+        kb.append([InlineKeyboardButton(text=btn_text, callback_data=f"open_{new_path}"), 
+                   InlineKeyboardButton(text="❌", callback_data=f"del_{new_path}")])
+    kb.append([InlineKeyboardButton(text="➕ إضافة قسم", callback_data=f"addf_{path}"), 
+               InlineKeyboardButton(text="➕ إضافة منتج", callback_data=f"addp_{path}")])
     back_data = "back_start"
     if path != "root":
         parent = ">".join(path.split(">")[:-1]) if ">" in path else "root"
-        back_short = get_short_path(parent)
-        path_map[back_short] = parent
-        back_data = f"open_{back_short}"
+        back_data = f"open_{parent}"
     kb.append([InlineKeyboardButton(text="🔙 رجوع", callback_data=back_data)])
     await call.message.edit_text(f"📍 المسار: {path}", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
 
 @dp.callback_query(F.data.startswith("del_"))
 async def del_node(call: types.CallbackQuery):
-    short_path = call.data.replace("del_", "")
-    path = path_map.get(short_path, short_path)
+    path = call.data.replace("del_", "")
     delete_from_tree(path)
     parent = ">".join(path.split(">")[:-1]) if ">" in path else "root"
-    parent_short = get_short_path(parent)
-    path_map[parent_short] = parent
-    call.data = f"open_{parent_short}"
+    call.data = f"open_{parent}"
     await open_node(call)
 
 @dp.callback_query(F.data.startswith(("addf_", "addp_")))
 async def add_start(call: types.CallbackQuery, state: FSMContext):
-    short_path = call.data.split("_")[1]
-    path = path_map.get(short_path, short_path)
-    await state.update_data(path=path, is_prod=call.data.startswith("addp_"))
+    parts = call.data.split("_", 1)
+    await state.update_data(path=parts[1], is_prod=parts[0] == "addp")
     await state.set_state(AdminStates.waiting_name)
     await call.message.edit_text("✍️ أرسل الاسم:")
 
