@@ -8,13 +8,15 @@ import asyncio
 import os
 import json
 
+# المسارات عشان السيرفر ما يضيع الملفات
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TOKEN = "8741135682:AAEW-c-3D9NGPCwtnFsG35BYOz0yZtGjqj0"
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-TREE_FILE = "store_tree.json"
-DISCOUNTS_FILE = "discounts.json"
-USERS_FILE = "users.txt"
+TREE_FILE = os.path.join(BASE_DIR, "store_tree.json")
+DISCOUNTS_FILE = os.path.join(BASE_DIR, "discounts.json")
+USERS_FILE = os.path.join(BASE_DIR, "users.txt")
 
 tree_cache = None
 
@@ -211,7 +213,8 @@ async def back_start(call: types.CallbackQuery):
     await call.message.edit_text("👑 لوحة تحكم ALEX STORE:", reply_markup=get_main_kb())
 
 async def main():
-    await dp.start_polling(bot)
+    # تعديل مهم جداً لمنع الـ ConflictError
+    await dp.start_polling(bot, drop_pending_updates=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
